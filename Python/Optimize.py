@@ -44,6 +44,9 @@ param_order   = pd.Series(['MW','MWh','Cost', 'CO2_Cost', 'CO2_MTon', 'MW_Cost',
 # True = normal run - go through minimize()
 normal_run = True
 
+# True = do not run parallel processes
+kill_parallel = False
+
 # run one set of knobs/Year - no minimize()
 #  Also set normal_run to False
 debug_one_case = False
@@ -111,7 +114,7 @@ def get_eia_data(region):
     csv_date = latest.read()
     latest.close()
     eia_filename = f'{region}_master_{csv_date}.csv'
-    csv_path = f'./csv/Eia_Hourly/{csv_date}/{eia_filename}'
+    csv_path = f'./csv/Eia_Hourly/latest/{eia_filename}'
 
     hourly_nrgs = pd.read_csv(csv_path,
                          header=0, 
@@ -659,7 +662,10 @@ def do_region(region):
               max_add_nrgs    = max_add_nrgs,
               demand          = demand)
     # End of years for loop    
-    outbox_path = './python/mailbox/outbox'    
+    outbox_path = './python/mailbox/outbox'
+    if not os.path.exists(outbox_path):
+        os.makedirs(outbox_path)
+        
     file_path = f'{outbox_path}/{inbox["Title"].loc["Initial"]}-{region}.csv'
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -698,23 +704,28 @@ def main():
     if region == 'All':
         regions = get_all_regions()
         
-    region_process = pd.Series(0,index=regions,dtype=object)
-    for region in regions:
-# Create new child process for each region
-        region_process[region] = Process(target=do_region, args=(region,))
-        region_process[region].start()
-
-    for region in regions:
-# Now, wait for all of them to be done
-        region_process[region].join()
-        if(region_process[region].exception):
-            error, traceback = region_process[region].exception
-            print (region, inbox['Title'].loc['Initial'], 'Error')
-            msgbox(f"{region} {inbox['Title'].loc['Initial']} Error")
-            print(traceback)
-        else:
-            print(region, ' Done')
-
+    if not kill_parallel:
+        region_process = pd.Series(0,index=regions,dtype=object)
+        for region in regions:
+    # Create new child process for each region
+            region_process[region] = Process(target=do_region, args=(region,))
+            region_process[region].start()
+    
+        for region in regions:
+    # Now, wait for all of them to be done
+            region_process[region].join()
+            if(region_process[region].exception):
+                error, traceback = region_process[region].exception
+                print (region, inbox['Title'].loc['Initial'], 'Error')
+                msgbox("Process Error", f"{region} {inbox['Title'].loc['Initial']} Error", 1)
+                print(traceback)
+            else:
+                print(region, ' Done')
+    else:
+        for region in regions:
+            do_region(region)
+        
+    
 
 if __name__ == '__main__':
     main()
