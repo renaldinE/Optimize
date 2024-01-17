@@ -1,0 +1,7 @@
+Analysis in Price_EIA_Calc.xlsx,,,,,,,
+Param,Solar,Wind,Nuclear,Gas,Coal,Storage,Units
+Capital Cost,"1,448,000","2,098,000","7,777,000","1,330,000","4,507,000","317,500",$/MW ($/MWh of capacity for Storage)
+Fixed O&M,"25,243","36,887","137,039","21,278","52,903","11,448",$/MW-year ($/MWh-year of Capacity for storage)
+Variable O&M + Fuel,0,0,10,24,23,14,$/MWh produced
+CO2,0.005,0.004,0.003,0.49,0.82,0.11125,Tonnes/MWh
+Liftime,30,25,40,25,40,10,Years
