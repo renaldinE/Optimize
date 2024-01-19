@@ -210,8 +210,8 @@ def fig_gas_and_storage(needed_hourly, gas_max, storage_max, stored):
             else:
                 outage_MWh   += hour_of_need - gas_max - stored                    
                 gas_used     += gas_max
-                storage_used = stored
-                stored       = 0
+                storage_used += stored
+                stored        = 0
     return gas_used, storage_used, outage_MWh, stored
 
 # add another year to the output matrix
@@ -527,7 +527,9 @@ def one_case(year):
     #  redemption = np.array([1.034483,	1.041666,	1.02564,	1.04167,	1.02564,	0.])
     #  Optimized Case
     # test_cases = np.array([[1.7906705,  1.15446494, 1.03271335, 1.12593594, 0.91245342, 0.23845428]])
-    test_cases =   np.array([[1.7906705,  1.15446494, 1.03271335, 1.13593594, 0.90245342, 0.23845428]])
+    test_cases =   np.array([[1.034483,	1.041666,	1.02564,	1.04167,	1.02564,	1.999],
+                             [1.034483,	1.041666,	1.02564,	1.04167,	1.02564,	1.999],
+                             [1.034483,	1.041666,	1.02564,	1.04167,	1.02564,	1.999]])
     knobs = test_cases[year-1]
     knobs_nrgs = pd.Series(knobs, index=nrgs, dtype=float)
     print(knobs)
@@ -560,10 +562,10 @@ def do_region(region):
     
     MW_total      = MW_nrgs.sum()                       
     output_matrix = init_output_matrix()
+    hourly_cost   = (MWh_nrgs * specs_nrgs[nrg].loc['Variable']).sum()/(365.25*24)
+    hourly_cost  += (MW_nrgs  * specs_nrgs[nrg].loc['Fixed']).sum()/(365.25*24)
+    expensive     = hourly_cost * 100
     
-    average_cost  = (MWh_nrgs * specs_nrgs[nrg].loc['Variable']).sum()
-    average_cost += (MW_nrgs  * specs_nrgs[nrg].loc['Fixed']).sum()
-    expensive     = average_cost
     stored        = 0
     outage_MWh    = 0
     target_hourly = total_hourly.copy()
