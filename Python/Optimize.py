@@ -55,7 +55,7 @@ debug_one_case = False
 # True = print minimize results
 debug_minimizer = False
 
-# Print out on each step of the minimizer
+# Print out on each step of the minimizer 
 debug_step_minimizer = False
 
 # Print out numbers that should not change in each year
@@ -702,11 +702,11 @@ def main():
     region        = inbox['Region'].loc['Initial']
     print('Starting ', inbox['Title'].loc['Initial'])
     
-    if region == 'All':
-        regions = get_all_regions()
         
-    if not kill_parallel:
+    if (not kill_parallel) and (region == 'All'):
+        regions = get_all_regions()
         region_process = pd.Series(0,index=regions,dtype=object)
+
         for region in regions:
     # Create new child process for each region
             region_process[region] = Process(target=do_region, args=(region,))
@@ -722,12 +722,14 @@ def main():
                 print(traceback)
             else:
                 print(region, ' Done')
-    else:
+    # kill_parallel True or not 'All'
+    elif region == 'All':
+        regions = get_all_regions()
         for region in regions:
             do_region(region)
+    else:
+        do_region(region)
         
-    
-
 if __name__ == '__main__':
     main()
 
