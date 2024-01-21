@@ -1,0 +1,6 @@
+TBD:
+Understand why still building gas in $500 scenario
+Optimize minimize routine - fatol, xatol, retest criterion
+Build test suite
+	Try tweaking different things, see that results vary as expected.
+Build Compare spreadsheet
