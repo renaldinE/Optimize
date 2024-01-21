@@ -37,9 +37,11 @@ nrgs           = np.array(['Solar', 'Wind', 'Nuclear', 'Gas', 'Coal', 'Storage']
 others         = np.array(['Hydro', 'Oil', 'Other'])
 
 # Output Matrix Columns
-output_header = pd.Series(['Year', 'CO2_price', 'Outage', 'Total_MW', 'Total_MWh', 'Energy_Cost', 'CO2_Cost', 'Demand'])
+output_header = pd.Series(['Year', 'CO2_Price', 'Outage', 'Total_MW', 'Total_MWh', 'Energy_Cost', 'CO2_Cost', 'Demand'])
 param_order   = pd.Series(['MW','MWh','Cost', 'CO2_Cost', 'CO2_MTon', 'MW_Cost', 'MWh_Cost', 'Knob', 'Max_Knob', 'Lifetime'])
 
+tweaked_globals_order = pd.Series(['CO2_Price', 'Demand', 'Interest'])
+tweaked_nrgs_order    = pd.Series(['Capital','Fixed', 'perMW', 'perMWh', 'Max_PCT', 'Lifetime', 'CO2_gen'])
 
 #************ Debug Options ************
 # True = normal run - go through minimize()
@@ -135,54 +137,62 @@ def init_output_matrix():
     output_matrix = pd.DataFrame(columns=output_header_loc, dtype=float)
     return output_matrix
 
-def init_prices_nrgs(specs_nrgs,inbox):
-    prices_nrgs = pd.DataFrame(0,columns=nrgs, index=['Cap','Fixed', 'perMWh', 'perMW'], dtype=float) 
+# Initial values for year zero - Spec Numbers
+def init_tweaks(specs_nrgs,inbox):
+    tweaked_nrgs = pd.DataFrame(1,columns=nrgs, index=tweaked_nrgs_order, dtype=float) 
     for nrg in nrgs: 
-        prices_nrgs[nrg].loc['Cap']     = specs_nrgs[nrg].loc['Capital']
-        prices_nrgs[nrg].loc['Fixed']   = specs_nrgs[nrg].loc['Fixed']   
-        prices_nrgs[nrg].loc['perMWh']  = specs_nrgs[nrg].loc['Variable']
-        prices_nrgs[nrg].loc['perMW']   = specs_nrgs[nrg].loc['Fixed'] + \
+        tweaked_nrgs[nrg].loc['Capital'] = specs_nrgs[nrg].loc['Capital']
+        tweaked_nrgs[nrg].loc['Fixed']   = specs_nrgs[nrg].loc['Fixed']   
+        tweaked_nrgs[nrg].loc['perMWh']  = specs_nrgs[nrg].loc['Variable']
+        tweaked_nrgs[nrg].loc['perMW']   = specs_nrgs[nrg].loc['Fixed'] + \
                      (-4 * npf.pmt(inbox['Interest'].loc['Initial']/4, specs_nrgs[nrg].loc['Lifetime']*4,specs_nrgs[nrg].loc['Capital']))
-    return prices_nrgs
-# Figure any changes in pricing from overlord
-def fig_next_prices(    
-                specs_nrgs,
-                prices_nrgs,
-                CO2_price,
-                demand,
-                interest,
+        tweaked_nrgs[nrg].loc['Lifetime'] = specs_nrgs[nrg].loc['Lifetime']
+        tweaked_nrgs[nrg].loc['Max_PCT']  = specs_nrgs[nrg].loc['Max_PCT']
+        tweaked_nrgs[nrg].loc['CO2_gen']  = specs_nrgs[nrg].loc['CO2_gen']
+        
+    tweaked_globals = pd.Series(0,index=tweaked_globals_order, dtype=float)
+    tweaked_globals['CO2_Price'] = 0
+    tweaked_globals['Demand']    = 1
+    tweaked_globals['Interest']  = 0
+    return tweaked_globals, tweaked_nrgs
+
+# Figure next year's info
+def fig_tweaks(    
+                tweaked_nrgs,
+                tweaked_globals,
                 inbox,
                 year):
 
     if year == 1:
+        loc_ = 'Initial'
+        tweaked_globals['CO2_Price'] = inbox['CO2_Price'].loc[loc_]
+        tweaked_globals['Demand']    = inbox['Demand'].loc[loc_] 
+        tweaked_globals['Interest']  = inbox['Interest'].loc[loc_]
         
-        CO2_price = inbox['CO2_Price'].loc['Initial']
-        demand    = inbox['Demand'].loc['Initial'] 
-        interest  = inbox['Interest'].loc['Initial'] 
-        for nrg in nrgs: 
-            prices_nrgs[nrg].loc['Cap']     = specs_nrgs[nrg].loc['Capital']  * inbox[nrg + '_Cap'].loc['Initial']
-            prices_nrgs[nrg].loc['Fixed']   = specs_nrgs[nrg].loc['Fixed']    * inbox[nrg + '_Fixed'].loc['Initial']
-            prices_nrgs[nrg].loc['perMWh']  = specs_nrgs[nrg].loc['Variable'] * inbox[nrg + '_Variable'].loc['Initial']
-            prices_nrgs[nrg].loc['perMW']   = prices_nrgs[nrg].loc['Fixed'] + \
-                             (-4 * npf.pmt(interest/4, specs_nrgs[nrg].loc['Lifetime']*4,prices_nrgs[nrg].loc['Cap']))
-                             # Note that this figures a quarterly payoff, 4 payments per year  
-    else: 
-        CO2_price += inbox['CO2_Price'].loc['Yearly']
-        for nrg in nrgs:  
-            prices_nrgs[nrg].loc['Cap']     = prices_nrgs[nrg].loc['Cap']      * inbox[nrg + '_Cap'].loc['Yearly']
-            prices_nrgs[nrg].loc['Fixed']   = prices_nrgs[nrg].loc['Fixed']    * inbox[nrg + '_Fixed'].loc['Yearly']
-            prices_nrgs[nrg].loc['perMWh']  = prices_nrgs[nrg].loc['perMWh']   * inbox[nrg + '_Variable'].loc['Yearly']
-            prices_nrgs[nrg].loc['perMW']   = prices_nrgs[nrg].loc['Fixed'] + \
-                             (-4 * npf.pmt(interest/4, specs_nrgs[nrg].loc['Lifetime']*4, prices_nrgs[nrg].loc['Cap']))
-            
-    return prices_nrgs, CO2_price,  interest, demand
+    else:
+        loc_ = 'Yearly'
+        tweaked_globals['CO2_Price'] += inbox['CO2_Price'].loc[loc_]
+        tweaked_globals['Demand']    *= inbox['Demand'].loc[loc_] 
+        tweaked_globals['Interest']  *= inbox['Interest'].loc[loc_] 
+    
+    for nrg in nrgs: 
+        tweaked_nrgs[nrg].loc['Capital']  *= inbox[nrg + '_Capital'].loc[loc_]
+        tweaked_nrgs[nrg].loc['Fixed']    *= inbox[nrg + '_Fixed'].loc[loc_]
+        tweaked_nrgs[nrg].loc['Lifetime'] *= inbox[nrg + '_Lifetime'].loc[loc_]
+        tweaked_nrgs[nrg].loc['Max_PCT']  *= inbox[nrg + '_Max_PCT'].loc[loc_]
+        tweaked_nrgs[nrg].loc['perMWh']   *= inbox[nrg + '_Variable'].loc[loc_]
+        
+        tweaked_nrgs[nrg].loc['perMW']     = tweaked_nrgs[nrg].loc['Fixed'] + \
+                         (-4 * npf.pmt(tweaked_globals['Interest']/4, tweaked_nrgs[nrg].loc['Lifetime']*4,tweaked_nrgs[nrg].loc['Capital']))
+                         # Note that this figures a quarterly payoff, 4 payments per year  
+    return tweaked_globals, tweaked_nrgs
 
 # Figure loss due to lifetime of plant
-def fig_decadence(hourly_nrgs, MWh_nrgs, MW_nrgs, specs_nrgs):
+def fig_decadence(hourly_nrgs, MWh_nrgs, MW_nrgs, tweaked_nrgs):
     for nrg in nrgs:
-        hourly_nrgs[nrg]   *= 1 - (1/specs_nrgs[nrg].loc['Lifetime'])
-        MW_nrgs[nrg]       *= 1 - (1/specs_nrgs[nrg].loc['Lifetime'])
-        MWh_nrgs[nrg]      *= 1 - (1/specs_nrgs[nrg].loc['Lifetime'])
+        hourly_nrgs[nrg]   *= 1 - (1/tweaked_nrgs[nrg].loc['Lifetime'])
+        MW_nrgs[nrg]       *= 1 - (1/tweaked_nrgs[nrg].loc['Lifetime'])
+        MWh_nrgs[nrg]      *= 1 - (1/tweaked_nrgs[nrg].loc['Lifetime'])
     return hourly_nrgs, MWh_nrgs, MW_nrgs
     
 # Gas fills any leftover need.  If not enough, storage.  If not enough, outage (VERY expensive)
@@ -218,21 +228,19 @@ def fig_gas_and_storage(needed_hourly, gas_max, storage_max, stored):
 def add_output_year(
                   MWh_nrgs,            
                   MW_nrgs,
-                  specs_nrgs,
-                  prices_nrgs,
+                  tweaked_globals,
+                  tweaked_nrgs,
                   expensive,
                   outage_MWh,
-                  CO2_price,
                   output_matrix,
                   year,
                   knobs_nrgs,
-                  max_add_nrgs,
-                  demand):
+                  max_add_nrgs):
             
     output_matrix.at[year, 'Year']      = year
-    output_matrix.at[year, 'CO2_price'] = CO2_price
+    output_matrix.at[year, 'CO2_Price'] = tweaked_globals['CO2_Price']
     output_matrix.at[year, 'Outage']    = outage_MWh
-    output_matrix.at[year, 'Demand']    = demand
+    output_matrix.at[year, 'Demand']    = tweaked_globals['Demand']
     
     energy_cost = 0
     total_CO2   = 0
@@ -242,26 +250,26 @@ def add_output_year(
     for nrg in nrgs:
         output_matrix.at[year, nrg + '_MW']        = MW_nrgs[nrg]  
         output_matrix.at[year, nrg + '_MWh']       = MWh_nrgs[nrg]  
-        output_matrix.at[year, nrg + '_MW_Cost']   = MW_nrgs[nrg]  * prices_nrgs[nrg].loc['perMW']
-        output_matrix.at[year, nrg + '_MWh_Cost']  = MWh_nrgs[nrg] * prices_nrgs[nrg].loc['perMWh']
-        output_matrix.at[year, nrg + '_Cost']      = MW_nrgs[nrg]  * prices_nrgs[nrg].loc['perMW']
-        output_matrix.at[year, nrg + '_Cost']     += MWh_nrgs[nrg] * prices_nrgs[nrg].loc['perMWh']
-        output_matrix.at[year, nrg + '_CO2_MTon']  = MWh_nrgs[nrg] * specs_nrgs[nrg].loc['CO2_gen']
-        output_matrix.at[year, nrg + '_CO2_Cost']  = MWh_nrgs[nrg] * specs_nrgs[nrg].loc['CO2_gen'] * CO2_price
+        output_matrix.at[year, nrg + '_MW_Cost']   = MW_nrgs[nrg]  * tweaked_nrgs[nrg].loc['perMW']
+        output_matrix.at[year, nrg + '_MWh_Cost']  = MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['perMWh']
+        output_matrix.at[year, nrg + '_Cost']      = MW_nrgs[nrg]  * tweaked_nrgs[nrg].loc['perMW']
+        output_matrix.at[year, nrg + '_Cost']     += MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['perMWh']
+        output_matrix.at[year, nrg + '_CO2_MTon']  = MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['CO2_gen']
+        output_matrix.at[year, nrg + '_CO2_Cost']  = MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['CO2_gen'] * tweaked_globals['CO2_Price']
         output_matrix.at[year, nrg + '_Knob']      = knobs_nrgs[nrg]
         output_matrix.at[year, nrg + '_Max_Knob']  = max_add_nrgs[nrg]
-        output_matrix.at[year, nrg + '_Lifetime']  = specs_nrgs[nrg].loc['Lifetime']
+        output_matrix.at[year, nrg + '_Lifetime']  = tweaked_nrgs[nrg].loc['Lifetime']
         
 
-        energy_cost += MW_nrgs[nrg]  * prices_nrgs[nrg].loc['perMW']
-        energy_cost += MWh_nrgs[nrg] * prices_nrgs[nrg].loc['perMWh']
-        total_CO2   += MWh_nrgs[nrg] * specs_nrgs[nrg].loc['CO2_gen']
+        energy_cost += MW_nrgs[nrg]  * tweaked_nrgs[nrg].loc['perMW']
+        energy_cost += MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['perMWh']
+        total_CO2   += MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['CO2_gen']
         # Storage is really not a producer, and its MW is really MWh of capacity
         if (nrg != 'Storage'):
             total_MW    += MW_nrgs[nrg]
             total_MWh   += MWh_nrgs[nrg]
     
-    CO2_cost     = total_CO2 * CO2_price
+    CO2_cost     = total_CO2 * tweaked_globals['CO2_Price']
     energy_cost += outage_MWh * expensive
     output_matrix.at[year, 'Energy_Cost'] = energy_cost
     output_matrix.at[year, 'CO2_Cost']    = CO2_cost 
@@ -271,24 +279,23 @@ def add_output_year(
     
 # Cost function used by minimizer
 def cost_function(
-                  MWh_nrgs,
-                  specs_nrgs,
-                  prices_nrgs,
-                  MW_nrgs,
-                  expensive,
-                  outage_MWh,
-                  CO2_price,
-                  adj_zeros):
+                  MWh_nrgs,      
+                  MW_nrgs,       
+                  tweaked_globals,
+                  tweaked_nrgs,  
+                  expensive,     
+                  outage_MWh,    
+                  adj_zeros):    
     cost = 0
     for nrg in nrgs:
         old_cost = cost
-        cost += MW_nrgs[nrg]  * prices_nrgs[nrg].loc['perMW']
-        cost += MWh_nrgs[nrg] * prices_nrgs[nrg].loc['perMWh']
-        cost += MWh_nrgs[nrg] * specs_nrgs[nrg].loc['CO2_gen'] * CO2_price
+        cost += MW_nrgs[nrg]  * tweaked_nrgs[nrg].loc['perMW']
+        cost += MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['perMWh']
+        cost += MWh_nrgs[nrg] * tweaked_nrgs[nrg].loc['CO2_gen'] * tweaked_globals['CO2_Price']
         if debug_cost:
-            print(f'{nrg}: ({MW_nrgs[nrg]:,.0f} MW * {prices_nrgs[nrg].loc["perMW"]:,.6f} M$/MW)')
-            print(f'      + {MWh_nrgs[nrg]:,.0f} MWh * {prices_nrgs[nrg].loc["perMWh"]:,.6f} M$/MWh')
-            print(f'      + {MWh_nrgs[nrg]:,.0f} MWh  * {specs_nrgs[nrg].loc["CO2_gen"]:,.5f} MTon/MWh * {CO2_price:,.6f} M$ per ton')
+            print(f'{nrg}: ({MW_nrgs[nrg]:,.0f} MW * {tweaked_nrgs[nrg].loc["perMW"]:,.6f} M$/MW)')
+            print(f'      + {MWh_nrgs[nrg]:,.0f} MWh * {tweaked_nrgs[nrg].loc["perMWh"]:,.6f} M$/MWh')
+            print(f'      + {MWh_nrgs[nrg]:,.0f} MWh  * {tweaked_nrgs[nrg].loc["CO2_gen"]:,.5f} MTon/MWh * {tweaked_globals["CO2_Price"]:,.6f} M$ per ton')
             print(f' sum = {cost - old_cost:,.0f}') 
         elif debug_cost_sum:
             print(f' {nrg},  {cost - old_cost:.0f}') 
@@ -313,7 +320,7 @@ def update_data(
                hourly_nrgs,   
                MWh_nrgs,      
                MW_nrgs,
-               specs_nrgs,
+               tweaked_nrgs,
                stored,        
                target_hourly, 
                zero_nrgs):    
@@ -333,7 +340,7 @@ def update_data(
         else:
             adj_zeros += knobs_nrgs[nrg]
 # Storage MW max_add = 2, so max_build is specs Max_PCT  That is why we divide by 2        
-    MW_nrgs['Storage'] += (specs_nrgs['Storage'].loc['Max_PCT'] * MW_total * knobs_nrgs['Storage']) / 2
+    MW_nrgs['Storage'] += (tweaked_nrgs['Storage'].loc['Max_PCT'] * MW_total * knobs_nrgs['Storage']) / 2
         
     if (knobs_nrgs['Gas'] > 1):
         MW_nrgs['Gas']     = MW_nrgs['Gas'] * knobs_nrgs['Gas']
@@ -358,15 +365,14 @@ def update_data(
 # Main function used by minimizer              
 def solve_this(
                knobs,                   
-               hourly_nrgs,  
+               hourly_nrgs,     
                MWh_nrgs,     
                MW_nrgs,      
                stored,       
                target_hourly,
-               specs_nrgs,
-               prices_nrgs,
-               expensive,    
-               CO2_price,  
+               tweaked_globals,
+               tweaked_nrgs,
+               expensive,      
                zero_nrgs):   
                
     knobs_nrgs = pd.Series(knobs, index=nrgs, dtype=float)
@@ -396,20 +402,19 @@ def solve_this(
                       hourly_nrgs   = new_hourly_nrgs,
                       MWh_nrgs      = new_MWh_nrgs,    
                       MW_nrgs       = new_MW_nrgs,
-                      specs_nrgs    = specs_nrgs,
+                      tweaked_nrgs  = tweaked_nrgs,
                       stored        = new_stored,
                       target_hourly = target_hourly,
                       zero_nrgs     = zero_nrgs)
                                  
     cost = cost_function(
-               MWh_nrgs    = new_MWh_nrgs,
-               MW_nrgs     = new_MW_nrgs,
-               specs_nrgs  = specs_nrgs,
-               prices_nrgs = prices_nrgs,
-               expensive   = expensive,
-               outage_MWh  = outage_MWh,
-               CO2_price   = CO2_price,
-               adj_zeros   = adj_zeros)
+               MWh_nrgs        = new_MWh_nrgs,
+               MW_nrgs         = new_MW_nrgs,
+               tweaked_globals = tweaked_globals,
+               tweaked_nrgs    = tweaked_nrgs,
+               expensive       = expensive,
+               outage_MWh      = outage_MWh,
+               adj_zeros       = adj_zeros)
 
     if (debug_step_minimizer):
         print(f'Knobs = {np.round(pd.Series(knobs_nrgs).values,4)} outage_MWh = {outage_MWh:,.0f} cost = {cost:,.0f}')
@@ -417,10 +422,10 @@ def solve_this(
     return (cost)
 
 # Initialize for year 1 starting place
-def init_knobs(demand, specs_nrgs):
+def init_knobs(tweaked_globals, tweaked_nrgs):
     knobs_nrgs = pd.Series(1,index=nrgs, dtype=float)
     for nrg in nrgs:
-        knobs_nrgs[nrg] = demand + (1/specs_nrgs[nrg].loc['Lifetime'])
+        knobs_nrgs[nrg] = tweaked_globals['Demand'] + (1/tweaked_nrgs[nrg].loc['Lifetime'])
     return knobs_nrgs
 
 
@@ -430,12 +435,10 @@ def run_minimizer(
                   MW_nrgs,               
                   stored,              
                   target_hourly,
-                  specs_nrgs,
-                  prices_nrgs,
+                  tweaked_globals,
+                  tweaked_nrgs,
                   expensive,               
-                  CO2_price,
                   zero_nrgs,
-                  demand,
                   knobs_nrgs,
                   inbox,
                   region):
@@ -452,11 +455,11 @@ def run_minimizer(
         elif MW_nrgs[nrg] == 0.: 
             max_add_nrgs[nrg] = 10.
         else:    
-            max_add_nrgs[nrg] = demand + ((specs_nrgs[nrg].loc['Max_PCT']*MW_total)/MW_nrgs[nrg])
+            max_add_nrgs[nrg] = tweaked_globals['Demand'] + ((tweaked_nrgs[nrg].loc['Max_PCT']*MW_total)/MW_nrgs[nrg])
         knobs_nrgs[nrg] = min(knobs_nrgs[nrg], max_add_nrgs[nrg] - .00001)
     # and retire some old plants
     hourly_nrgs, MWh_nrgs, MW_nrgs = \
-                fig_decadence(hourly_nrgs, MWh_nrgs, MW_nrgs, specs_nrgs)  
+                fig_decadence(hourly_nrgs, MWh_nrgs, MW_nrgs, tweaked_nrgs)  
     
     hi_bound = max_add_nrgs.copy()
     lo_bound = np.array([0.]  * len(nrgs))
@@ -481,10 +484,9 @@ def run_minimizer(
                         MW_nrgs,               
                         stored,              
                         target_hourly,
-                        specs_nrgs,
-                        prices_nrgs,
+                        tweaked_globals,
+                        tweaked_nrgs,
                         expensive,               
-                        CO2_price,
                         zero_nrgs
                        ),
                     bounds=bnds,                  
@@ -548,7 +550,6 @@ def do_region(region):
     if os.path.exists(file_path):
         os.remove(file_path)
     
-    demand       = inbox['Demand'].loc['Initial']
     MW_nrgs      = pd.Series(0,index=nrgs, dtype=float)
     MWh_nrgs     = pd.Series(0,index=nrgs, dtype=float)
     total_hourly = pd.Series(np.zeros(sample_points, dtype=float))
@@ -569,44 +570,38 @@ def do_region(region):
     stored        = 0
     outage_MWh    = 0
     target_hourly = total_hourly.copy()
-    CO2_price     = 0
+    CO2_Price     = 0
     
-    prices_nrgs = init_prices_nrgs(specs_nrgs, inbox)
-    interest    = inbox['Interest'].loc['Initial']
+    tweaked_globals, tweaked_nrgs = init_tweaks(specs_nrgs, inbox)
 #Output Year Zero
     knobs_nrgs = pd.Series(1., index=nrgs, dtype=float)
     output_matrix = \
                 add_output_year(
-                    MWh_nrgs      = MWh_nrgs,                  
-                    MW_nrgs       = MW_nrgs,
-                    specs_nrgs    = specs_nrgs,
-                    prices_nrgs   = prices_nrgs,
-                    expensive     = expensive,
-                    outage_MWh    = outage_MWh,
-                    CO2_price     = CO2_price,
-                    output_matrix = output_matrix,
-                    year          = 0,
-                    knobs_nrgs    = knobs_nrgs,
-                    max_add_nrgs  = knobs_nrgs,
-                    demand        = demand)
+                    MWh_nrgs        = MWh_nrgs,                          
+                    MW_nrgs         = MW_nrgs,
+                    tweaked_globals = tweaked_globals,
+                    tweaked_nrgs    = tweaked_nrgs,
+                    expensive       = expensive,
+                    outage_MWh      = outage_MWh,
+                    output_matrix   = output_matrix,
+                    year            = 0,
+                    knobs_nrgs      = knobs_nrgs,
+                    max_add_nrgs    = knobs_nrgs)
         
-    knobs_nrgs = init_knobs(demand=demand, specs_nrgs=specs_nrgs)    
+    knobs_nrgs = init_knobs(tweaked_globals=tweaked_globals, tweaked_nrgs=tweaked_nrgs)    
     
     for year in range(1, int(years)+1):
         print(f'Year {year} in {region}')
         # Figure new target (update_data used by solve_this, so not included there)
-        target_hourly = (target_hourly * demand) + (hourly_nrgs['Others'] * (demand-1))
+        target_hourly = (target_hourly * tweaked_globals['Demand']) + (hourly_nrgs['Others'] * (tweaked_globals['Demand']-1))
 
 # Update prices                       
-        prices_nrgs, CO2_price, interest, demand = \
-            fig_next_prices (
-                    specs_nrgs  = specs_nrgs, 
-                    prices_nrgs = prices_nrgs,
-                    CO2_price   = CO2_price,  
-                    demand      = demand,     
-                    interest    = interest,   
-                    inbox       = inbox,
-                    year        = year)
+        tweaked_globals, tweaked_nrgs = \
+            fig_tweaks (
+                    tweaked_globals = tweaked_globals,
+                    tweaked_nrgs    = tweaked_nrgs,
+                    inbox           = inbox,
+                    year            = year)
         
 # Now optimize this year            
         # Normal run
@@ -617,12 +612,10 @@ def do_region(region):
                                 MW_nrgs        = MW_nrgs,               
                                 stored         = stored,              
                                 target_hourly  = target_hourly,
-                                specs_nrgs     = specs_nrgs,
-                                prices_nrgs    = prices_nrgs,
+                                tweaked_globals= tweaked_globals,
+                                tweaked_nrgs    = tweaked_nrgs,
                                 expensive      = expensive,               
-                                CO2_price      = CO2_price,
                                 zero_nrgs      = zero_nrgs,
-                                demand         = demand,
                                 knobs_nrgs     = knobs_nrgs,
                                 inbox          = inbox,
                                 region         = region)
@@ -644,7 +637,7 @@ def do_region(region):
                     hourly_nrgs   = hourly_nrgs,
                     MWh_nrgs      = MWh_nrgs,    
                     MW_nrgs       = MW_nrgs,
-                    specs_nrgs    = specs_nrgs,
+                    tweaked_nrgs  = tweaked_nrgs,
                     stored        = stored,
                     target_hourly = target_hourly,
                     zero_nrgs     = zero_nrgs)
@@ -652,23 +645,18 @@ def do_region(region):
 # Output results of this year             
         output_matrix = \
             add_output_year(
-              MWh_nrgs        = MWh_nrgs, 
+              MWh_nrgs        = MWh_nrgs,         
               MW_nrgs         = MW_nrgs,
-              specs_nrgs      = specs_nrgs,
-              prices_nrgs     = prices_nrgs,
+              tweaked_globals = tweaked_globals,
+              tweaked_nrgs     = tweaked_nrgs,
               expensive       = expensive,
               outage_MWh      = outage_MWh,
-              CO2_price       = CO2_price,
               output_matrix   = output_matrix,
               year            = year,
               knobs_nrgs      = knobs_nrgs,
-              max_add_nrgs    = max_add_nrgs,
-              demand          = demand)
+              max_add_nrgs    = max_add_nrgs)
     # End of years for loop    
     outbox_path = './python/mailbox/outbox'
-    if not os.path.exists(outbox_path):
-        os.makedirs(outbox_path)
-        
     file_path = f'{outbox_path}/{inbox["Title"].loc["Initial"]}-{region}.csv'
     if os.path.exists(file_path):
         os.remove(file_path)
