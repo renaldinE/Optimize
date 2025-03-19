@@ -13,8 +13,7 @@ os.chdir(dirname + '\\..')
 
 # Start and end date and time of first and last entry
 first_hour_dt = dt.datetime(2020, 1, 1) # by default set to 12AM (midnight)
-# last_hour_dt = dt.datetime(dt.date.today().year - 1, 1, 1) # not need to specify time zone to UTC, it is by default dt.datetime(2020, 1, 2).isoformat(timespec='hours')
-last_hour_dt = dt.datetime(2020, 1, 2)
+last_hour_dt = dt.datetime(dt.date.today().year - 1, 1, 1) # not need to specify time zone to UTC, it is by default dt.datetime(2020, 1, 2).isoformat(timespec='hours')
 total_num_records = int((last_hour_dt - first_hour_dt).total_seconds() / 3600) # No. of records = total no. of hours
 
 def URL_constructor(
